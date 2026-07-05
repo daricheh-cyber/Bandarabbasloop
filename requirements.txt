@@ -1,1 +1,3 @@
 google-search-results
+gspread
+google-auth

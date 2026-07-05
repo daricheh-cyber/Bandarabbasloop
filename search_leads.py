@@ -32,7 +32,7 @@ def load_existing(filepath):
     """بارگذاری داده‌های موجود از CSV"""
     if not os.path.exists(filepath):
         return [], set(), set()
-    with open(filepath, encoding="utf-8") as f:
+    with open(filepath, encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         rows = list(reader)
     seen_mobiles = {r["شماره موبایل"] for r in rows if r.get("شماره موبایل")}

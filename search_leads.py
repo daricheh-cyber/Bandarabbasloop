@@ -1,8 +1,11 @@
 import os
 import csv
 import re
+import json
+import gspread
 from serpapi import GoogleSearch
 from datetime import datetime
+from google.oauth2.service_account import Credentials
 
 # دسته‌بندی کسب‌وکارها به ترتیب اولویت
 CATEGORIES = [
@@ -22,10 +25,28 @@ CATEGORIES = [
 
 CSV_FILE = "leads.csv"
 HEADERS = ["نام کسب‌وکار", "صنف", "شماره موبایل", "شماره ثابت", "منبع", "تاریخ"]
+SHEET_ID = "1eQEEc-lroJh1R45hdYC5rAgFg4UcHdq5fhTbdSkkT7Y"
 
-# regex برای شماره موبایل و ثابت ایران
 MOBILE_RE = re.compile(r'\b(09[0-9]{9})\b')
 PHONE_RE  = re.compile(r'\b(0[1-8][0-9]{9})\b')
+
+
+def get_sheet():
+    """اتصال به گوگل شیت"""
+    creds_json = json.loads(os.environ["GOOGLE_CREDENTIALS"])
+    scopes = [
+        "https://www.googleapis.com/auth/spreadsheets",
+        "https://www.googleapis.com/auth/drive",
+    ]
+    creds = Credentials.from_service_account_info(creds_json, scopes=scopes)
+    client = gspread.authorize(creds)
+    sheet = client.open_by_key(SHEET_ID).sheet1
+
+    # اضافه کردن هدر اگه شیت خالیه
+    if sheet.row_count == 0 or sheet.cell(1, 1).value is None:
+        sheet.append_row(HEADERS)
+
+    return sheet
 
 
 def load_existing(filepath):
@@ -108,14 +129,28 @@ def main():
         seen_mobiles.add(mob)
         unique.append(lead)
 
-    # ذخیره در CSV
+    # ذخیره در CSV محلی
     all_rows = existing_rows + unique
     with open(CSV_FILE, "w", encoding="utf-8-sig", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=HEADERS)
         writer.writeheader()
         writer.writerows(all_rows)
 
-    print(f"✅ {len(unique)} مخاطب جدید اضافه شد — مجموع: {len(all_rows)}")
+    # ذخیره در گوگل شیت
+    if unique:
+        sheet = get_sheet()
+        for lead in unique:
+            sheet.append_row([
+                lead["نام کسب‌وکار"],
+                lead["صنف"],
+                lead["شماره موبایل"],
+                lead["شماره ثابت"],
+                lead["منبع"],
+                lead["تاریخ"],
+            ])
+        print(f"✅ {len(unique)} مخاطب جدید در گوگل شیت ذخیره شد — مجموع: {len(all_rows)}")
+    else:
+        print(f"ℹ️ مخاطب جدیدی پیدا نشد — مجموع: {len(all_rows)}")
 
 
 if __name__ == "__main__":

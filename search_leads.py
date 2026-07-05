@@ -7,7 +7,6 @@ from serpapi import GoogleSearch
 from datetime import datetime
 from google.oauth2.service_account import Credentials
 
-# دسته‌بندی کسب‌وکارها به ترتیب اولویت
 CATEGORIES = [
     "واردکنندگان و فروشگاه های منطقه آزاد بندرعباس",
     "نمایندگی های خودرو و موتور بندرعباس",
@@ -24,16 +23,19 @@ CATEGORIES = [
 ]
 
 CSV_FILE = "leads.csv"
-HEADERS = ["نام کسب‌وکار", "صنف", "شماره موبایل", "شماره ثابت", "منبع", "تاریخ"]
+HEADERS = ["نام کسب\u200cوکار", "صنف", "شماره موبایل", "شماره ثابت", "منبع", "تاریخ"]
 SHEET_ID = "1eQEEc-lroJh1R45hdYC5rAgFg4UcHdq5fhTbdSkkT7Y"
-
 MOBILE_RE = re.compile(r'\b(09[0-9]{9})\b')
 PHONE_RE  = re.compile(r'\b(0[1-8][0-9]{9})\b')
 
 
 def get_sheet():
-    """اتصال به گوگل شیت"""
-    creds_json = json.loads(os.environ["GOOGLE_CREDENTIALS"])
+    raw = os.environ.get("GOOGLE_CREDENTIALS", "").strip()
+    # استخراج JSON از متن
+    match = re.search(r'\{.*\}', raw, re.DOTALL)
+    if not match:
+        raise ValueError("GOOGLE_CREDENTIALS: JSON معتبر پیدا نشد")
+    creds_json = json.loads(match.group(0))
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets",
         "https://www.googleapis.com/auth/drive",
@@ -41,16 +43,12 @@ def get_sheet():
     creds = Credentials.from_service_account_info(creds_json, scopes=scopes)
     client = gspread.authorize(creds)
     sheet = client.open_by_key(SHEET_ID).sheet1
-
-    # اضافه کردن هدر اگه شیت خالیه
-    if sheet.row_count == 0 or sheet.cell(1, 1).value is None:
+    if not sheet.row_values(1):
         sheet.append_row(HEADERS)
-
     return sheet
 
 
 def load_existing(filepath):
-    """بارگذاری داده‌های موجود از CSV"""
     if not os.path.exists(filepath):
         return [], set(), set()
     with open(filepath, encoding="utf-8-sig") as f:
@@ -62,37 +60,21 @@ def load_existing(filepath):
 
 
 def search_category(category, api_key):
-    """جستجوی یک دسته در گوگل و استخراج شماره‌ها"""
     leads = []
-    queries = [
-        f"{category} شماره تماس",
-        f"{category} موبایل",
-    ]
-    for query in queries:
-        params = {
-            "engine": "google",
-            "q": query,
-            "api_key": api_key,
-            "hl": "fa",
-            "gl": "ir",
-            "num": 10,
-        }
+    for query in [f"{category} شماره تماس", f"{category} موبایل"]:
+        params = {"engine": "google", "q": query, "api_key": api_key, "hl": "fa", "gl": "ir", "num": 10}
         results = GoogleSearch(params).get_dict()
         for r in results.get("organic_results", []):
-            text   = (r.get("title", "") + " " + r.get("snippet", ""))
-            source = r.get("link", "")
-            name   = r.get("title", "")[:60]
-
+            text = r.get("title", "") + " " + r.get("snippet", "")
             mobiles = MOBILE_RE.findall(text)
             phones  = PHONE_RE.findall(text)
-
             if mobiles or phones:
                 leads.append({
-                    "نام کسب‌وکار": name,
+                    "نام کسب\u200cوکار": r.get("title", "")[:60],
                     "صنف": category.replace(" بندرعباس", ""),
                     "شماره موبایل": mobiles[0] if mobiles else "",
                     "شماره ثابت":   phones[0]  if phones  else "",
-                    "منبع": source,
+                    "منبع": r.get("link", ""),
                     "تاریخ": datetime.now().strftime("%Y-%m-%d"),
                 })
     return leads
@@ -105,22 +87,19 @@ def main():
 
     existing_rows, seen_mobiles, seen_cats = load_existing(CSV_FILE)
 
-    # پیدا کردن دسته بعدی
     next_cat = None
     for cat in CATEGORIES:
-        short = cat.replace(" بندرعباس", "")
-        if short not in seen_cats:
+        if cat.replace(" بندرعباس", "") not in seen_cats:
             next_cat = cat
             break
 
     if not next_cat:
-        print("✅ همه دسته‌ها پردازش شدند!")
+        print("همه دسته ها پردازش شدند!")
         return
 
-    print(f"🔍 جستجو: {next_cat}")
+    print(f"جستجو: {next_cat}")
     new_leads = search_category(next_cat, api_key)
 
-    # حذف تکراری‌ها
     unique = []
     for lead in new_leads:
         mob = lead["شماره موبایل"]
@@ -129,28 +108,19 @@ def main():
         seen_mobiles.add(mob)
         unique.append(lead)
 
-    # ذخیره در CSV محلی
     all_rows = existing_rows + unique
     with open(CSV_FILE, "w", encoding="utf-8-sig", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=HEADERS)
         writer.writeheader()
         writer.writerows(all_rows)
 
-    # ذخیره در گوگل شیت
     if unique:
         sheet = get_sheet()
         for lead in unique:
-            sheet.append_row([
-                lead["نام کسب‌وکار"],
-                lead["صنف"],
-                lead["شماره موبایل"],
-                lead["شماره ثابت"],
-                lead["منبع"],
-                lead["تاریخ"],
-            ])
-        print(f"✅ {len(unique)} مخاطب جدید در گوگل شیت ذخیره شد — مجموع: {len(all_rows)}")
+            sheet.append_row([lead["نام کسب\u200cوکار"], lead["صنف"], lead["شماره موبایل"], lead["شماره ثابت"], lead["منبع"], lead["تاریخ"]])
+        print(f"{len(unique)} مخاطب جدید در گوگل شیت - مجموع: {len(all_rows)}")
     else:
-        print(f"ℹ️ مخاطب جدیدی پیدا نشد — مجموع: {len(all_rows)}")
+        print(f"مخاطب جدیدی پیدا نشد - مجموع: {len(all_rows)}")
 
 
 if __name__ == "__main__":

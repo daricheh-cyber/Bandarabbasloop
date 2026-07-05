@@ -2,8 +2,8 @@ name: Search Bandar Abbas Billboard Leads
 
 on:
   schedule:
-    - cron: '0 */6 * * *'   # هر ۶ ساعت یکبار
-  workflow_dispatch:          # اجرای دستی از GitHub
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -15,6 +15,8 @@ jobs:
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -22,11 +24,12 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: pip install google-search-results
+        run: pip install google-search-results gspread google-auth
 
       - name: Run search
         env:
           SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
         run: python search_leads.py
 
       - name: Commit results
@@ -34,5 +37,6 @@ jobs:
           git config --global user.name 'Billboard Leads Bot'
           git config --global user.email 'bot@github.com'
           git add leads.csv
-          git diff --staged --quiet || git commit -m "لیدهای جدید - $(date '+%Y-%m-%d %H:%M UTC')"
+          git diff --staged --quiet || git commit -m "leads - $(date '+%Y-%m-%d %H:%M UTC')"
+          git pull --rebase origin main
           git push
